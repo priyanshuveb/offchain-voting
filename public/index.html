@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Mini Snapshot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; max-width: 760px; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    button { padding: 8px 14px; border-radius: 8px; border: 1px solid #ccc; cursor: pointer; }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .muted { color: #666; font-size: 12px; }
+  </style>
+  <script type="module">
+    import { BrowserProvider, getAddress } from "https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.min.js";
+
+    const api = (path, opts={}) => fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+
+    let account, chainId, verifier;
+    let proposal;
+
+    async function loadProposal() {
+      const id = document.getElementById("proposalId").value || "1";
+      const res = await api(`/api/proposal/${id}`);
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || "Failed to load proposal"); return; }
+      proposal = data;
+      chainId = data.chainB.chainId;
+      verifier = data.chainB.verifier;
+
+      document.getElementById("details").innerHTML = `
+        <div>Proposal ID: <b>${data.proposalId}</b></div>
+        <div>Snapshot Block: <b>${data.snapshotBlock}</b></div>
+        <div>Snapshot ER: <b>${data.snapshotER}</b></div>
+        <div>Voting Start: <b>${new Date(data.votingStart*1000).toLocaleString()}</b></div>
+        <div>Voting End: <b>${new Date(data.votingEnd*1000).toLocaleString()}</b></div>
+        <div class="muted">Verifier (Chain B): ${data.chainB.verifier} on chainId ${data.chainB.chainId}</div>
+      `;
+    }
+
+    async function connect() {
+      if (!window.ethereum) { alert("Install MetaMask"); return; }
+      const provider = new BrowserProvider(window.ethereum);
+      const accs = await provider.send("eth_requestAccounts", []);
+      account = getAddress(accs[0]);
+      document.getElementById("acct").textContent = account;
+    }
+
+    function eip712Domain(chainId, verifyingContract) {
+      return { name: "CrossGov", version: "1", chainId, verifyingContract };
+    }
+
+    function eip712Types() {
+      return {
+        Vote: [
+          { name: "proposalId", type: "uint256" },
+          { name: "support",    type: "bool"    },
+          { name: "voter",      type: "address" },
+          { name: "power",      type: "uint256" },
+          { name: "nonce",      type: "uint256" },
+          { name: "deadline",   type: "uint256" },
+        ]
+      };
+    }
+
+    async function signAndSubmitVote() {
+      if (!account) return alert("Connect wallet first");
+      if (!proposal) return alert("Load proposal first");
+
+      const supportSel = document.querySelector('input[name="support"]:checked');
+      if (!supportSel) return alert("Choose Yes/No/Abstain");
+
+      const abstain = supportSel.value === "abstain";
+      const support = supportSel.value === "yes" ? true : false; // note: "abstain" maps to false here, we pass flag
+
+      const nonce = BigInt(Date.now()); // demo nonce (monotonic per voter is better on backend)
+      const deadline = BigInt(Math.floor(Date.now()/1000) + 3600); // 1 hour
+
+      // We don't know power client-side (backend recomputes). Set 0; server will recompute & ignore this.
+      const value = {
+        proposalId: BigInt(proposal.proposalId),
+        support,
+        voter: account,
+        power: 0n,
+        nonce,
+        deadline,
+      };
+
+      console.log("value", value);
+      
+
+      const provider = new BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+
+      const signature = await signer.signTypedData(
+        eip712Domain(proposal.chainB.chainId, proposal.chainB.verifier),
+        eip712Types(),
+        value
+      );
+
+      const resp = await api("/api/vote", {
+        method: "POST",
+        body: JSON.stringify({
+          proposalId: proposal.proposalId,
+          support,
+          abstain,
+          voter: account,
+        //   userPower: null,     // optional; server recomputes anyway
+          nonce: nonce.toString(),
+          deadline: deadline.toString(),
+          signature
+        })
+      });
+      const data = await resp.json();
+      if (!resp.ok) alert(data.error || "Vote failed");
+      else alert("Vote stored ✅");
+    }
+
+    // async function createMerkle() {
+    //   if (!proposal) return alert("Load proposal first");
+    //   const resp = await api(`/api/merkle/${proposal.proposalId}`, { method: "POST" });
+    //   const data = await resp.json();
+    //   if (!resp.ok) { alert(data.error || "Merkle build failed"); return; }
+    //   alert(`Merkle Root: ${data.root}\nFor: ${data.counts.for}\nAgainst: ${data.counts.against}\nAbstain: ${data.counts.abstain}`);
+    // }
+
+    async function createMerkle() {
+        if (!proposal) return alert("Load proposal first");
+
+        // 1) Freeze (build & store root)
+        let resp = await api(`/api/merkle/${proposal.proposalId}`, { method: "POST" });
+        console.log(" jamun 0", resp);
+        
+        let data = await resp.json();
+        console.log(" jamun 1", data);
+        
+        if (!resp.ok) return alert(data.error || "Freeze failed");
+        alert(`Root frozen ✅\nRoot: ${data.root}\nTotal counted: ${data.counts.totalCounted}`);
+console.log(" jamun 2");
+
+        // 2) Build multiproof for ALL voters (omit body.voters)
+        resp = await api(`/api/multiproof/${proposal.proposalId}`, { method: "POST", body: JSON.stringify({}) });
+        data = await resp.json();
+        console.log(" jamun 3", data);
+        if (!resp.ok) return alert(data.error || "Multiproof failed");
+
+        // show a short summary
+        alert(`Multiproof ready.\nLeaves: ${data.leaves.length}\nProof nodes: ${data.proof.length}\nFlags: ${data.proofFlags.length}`);
+    }
+
+    // wire events
+    window.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("btnLoad").onclick = loadProposal;
+      document.getElementById("btnConnect").onclick = connect;
+      document.getElementById("btnVote").onclick = signAndSubmitVote;
+      document.getElementById("btnMerkle").onclick = createMerkle;
+    });
+  </script>
+</head>
+<body>
+  <div class="card">
+    <div class="row">
+      <input id="proposalId" placeholder="Proposal ID" value="1" />
+      <button id="btnLoad">Load Proposal</button>
+      <button id="btnConnect">Connect Wallet</button>
+      <div id="acct" class="muted"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Proposal Details</h3>
+    <div id="details" class="muted">Load a proposal...</div>
+  </div>
+
+  <div class="card">
+    <h3>Cast Vote (gasless EIP-712)</h3>
+    <div>
+      <label><input type="radio" name="support" value="yes" /> Yes</label>
+      <label><input type="radio" name="support" value="no" /> No</label>
+      <label><input type="radio" name="support" value="abstain" /> Abstain</label>
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <button id="btnVote">Sign & Submit</button>
+    </div>
+    <div class="muted">Your wallet signs a typed message; the server recomputes power at the snapshot and stores the vote.</div>
+  </div>
+
+  <div class="card">
+    <h3>Create Merkle Root</h3>
+    <button id="btnMerkle">Create Merkle Root</button>
+    <div class="muted">Works only after the voting end time; otherwise shows an error.</div>
+  </div>
+</body>
+</html>
