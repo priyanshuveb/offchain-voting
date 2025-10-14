@@ -18,7 +18,8 @@
 
     let account, chainId, verifier;
     let proposal;
-
+    const VOTE_VERIFIER = "0x05342e07326A0CcE11e4C1873Da8faFCae6dCBE0"
+    let deadline;
     async function loadProposal() {
       const id = document.getElementById("proposalId").value || "1";
       const res = await api(`/api/proposal/${id}`);
@@ -27,6 +28,7 @@
       proposal = data;
       chainId = data.chainB.chainId;
       verifier = data.chainB.verifier;
+      deadline = data.deadline;
 
       document.getElementById("details").innerHTML = `
         <div>Proposal ID: <b>${data.proposalId}</b></div>
@@ -34,7 +36,8 @@
         <div>Snapshot ER: <b>${data.snapshotER}</b></div>
         <div>Voting Start: <b>${new Date(data.votingStart*1000).toLocaleString()}</b></div>
         <div>Voting End: <b>${new Date(data.votingEnd*1000).toLocaleString()}</b></div>
-        <div class="muted">Verifier (Chain B): ${data.chainB.verifier} on chainId ${data.chainB.chainId}</div>
+        <div>Deadline: <b>${new Date(data.deadline*1000).toLocaleString()}</b></div>
+        <div class="muted">Verifier (Chain B): <b>${data.chainB.verifier}</b> on chainId <b>${data.chainB.chainId}</b></div>
       `;
     }
 
@@ -71,18 +74,32 @@
       if (!supportSel) return alert("Choose Yes/No/Abstain");
 
       const abstain = supportSel.value === "abstain";
-      const support = supportSel.value === "yes" ? true : false; // note: "abstain" maps to false here, we pass flag
+      const support = supportSel.value === "yes" ? true : false;
 
-      const nonce = BigInt(Date.now()); // demo nonce (monotonic per voter is better on backend)
+      // const nonce = BigInt(Date.now()); // demo nonce (monotonic per voter is better on backend)
       // const deadline = BigInt(Math.floor(Date.now()/1000) + 3600); // 1 hour
-      const deadline = 1780375555 // must be before voting end
-      const myPower = account == 0xb62803C3f1c7112CAd3F35a503504C3B0920eDBF? 89220000000000000004n : 0n; // demo power (backend recomputes at snapshot)
-      // We don't know power client-side (backend recomputes). Set 0; server will recompute & ignore this.
+      // const deadline = data.deadline // must be before voting end
+      const { nextNonce } = await (await fetch(`/api/nextNonce/${proposal.proposalId}/${account}`)).json();
+      const nonce = BigInt(nextNonce);
+
+      const power_resp = await fetch('/api/compute-power/', {
+            method: "POST",
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              proposalId: proposal.proposalId,
+              voter: account,
+      }),
+      })
+      const power_data = await power_resp.json()
+      console.log("P O W E R", power_data);
+      
       const value = {
         proposalId: BigInt(proposal.proposalId),
         support,
         voter: account,
-        power: myPower,
+        power: power_data.power,
         nonce,
         deadline,
       };
@@ -94,9 +111,7 @@
       const signer = await provider.getSigner();
 
       const signature = await signer.signTypedData(
-        //@update: Right now using fixed verifier from loaded proposal
-        // eip712Domain(proposal.chainB.chainId, proposal.chainB.verifier),
-        eip712Domain(proposal.chainB.chainId, "0x05342e07326A0CcE11e4C1873Da8faFCae6dCBE0"),
+        eip712Domain(proposal.chainB.chainId, VOTE_VERIFIER),
         eip712Types(),
         value
       );
@@ -108,7 +123,6 @@
           support,
           abstain,
           voter: account,
-        //   userPower: null,     // optional; server recomputes anyway
           nonce: nonce.toString(),
           deadline: deadline.toString(),
           signature
@@ -119,44 +133,50 @@
       else alert("Vote stored ✅");
     }
 
-    // async function createMerkle() {
-    //   if (!proposal) return alert("Load proposal first");
-    //   const resp = await api(`/api/merkle/${proposal.proposalId}`, { method: "POST" });
-    //   const data = await resp.json();
-    //   if (!resp.ok) { alert(data.error || "Merkle build failed"); return; }
-    //   alert(`Merkle Root: ${data.root}\nFor: ${data.counts.for}\nAgainst: ${data.counts.against}\nAbstain: ${data.counts.abstain}`);
-    // }
+  async function claimAsset() {
+    try {
+      if (!window.ethereum) return alert("Install MetaMask");
+      if (!account) return alert("Connect wallet first");
+
+    const provider = new BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+
+    const contract = new ethers.Contract(ASSET_MINTER_ADDR, ASSET_MINTER_ABI, signer);
+
+    const tx = await contract.getAsset();
+    alert(`Tx sent: ${tx.hash}`);
+    const rcpt = await tx.wait();
+    alert(`Claimed Successfully}`);
+  } catch (err) {
+    console.error(err);
+    alert(err?.message || "Claim failed");
+  }
+}
+
 
     async function createMerkle() {
         if (!proposal) return alert("Load proposal first");
 
         // 1) Freeze (build & store root)
         let resp = await api(`/api/merkle/${proposal.proposalId}`, { method: "POST" });
-        console.log(" jamun 0", resp);
-        
         let data = await resp.json();
-        console.log(" jamun 1", data);
-        
         if (!resp.ok) return alert(data.error || "Freeze failed");
         alert(`Root frozen ✅\nRoot: ${data.root}\nTotal counted: ${data.counts.totalCounted}`);
-console.log(" jamun 2");
 
-        // 2) Build multiproof for ALL voters (omit body.voters)
+        // 2) Build multiproof for ALL voters
         resp = await api(`/api/multiproof/${proposal.proposalId}`, { method: "POST", body: JSON.stringify({}) });
         data = await resp.json();
-        console.log(" jamun 3", data);
         if (!resp.ok) return alert(data.error || "Multiproof failed");
 
-        // show a short summary
         alert(`Multiproof ready.\nLeaves: ${data.leaves.length}\nProof nodes: ${data.proof.length}\nFlags: ${data.proofFlags.length}`);
     }
 
-    // wire events
     window.addEventListener("DOMContentLoaded", () => {
       document.getElementById("btnLoad").onclick = loadProposal;
       document.getElementById("btnConnect").onclick = connect;
       document.getElementById("btnVote").onclick = signAndSubmitVote;
       document.getElementById("btnMerkle").onclick = createMerkle;
+      document.getElementById("btnClaim").onclick = claimAsset;
     });
   </script>
 </head>
@@ -176,6 +196,12 @@ console.log(" jamun 2");
   </div>
 
   <div class="card">
+  <h3>Claim ASSET</h3>
+  <p class="muted">Calls <code>getAsset()</code> on Chain A to transfer you 100 ASSET (requires gas).</p>
+  <button id="btnClaim">Claim 100 ASSET</button>
+</div>
+
+  <div class="card">
     <h3>Cast Vote (gasless EIP-712)</h3>
     <div>
       <label><input type="radio" name="support" value="yes" /> Yes</label>
@@ -193,5 +219,11 @@ console.log(" jamun 2");
     <button id="btnMerkle">Create Merkle Root</button>
     <div class="muted">Works only after the voting end time; otherwise shows an error.</div>
   </div>
+  <div class="card">
+    <h3>Freeze Proposal on Chain B</h3>
+    <p class="muted">Owner-only: commits the Merkle root, window, and thresholds to the VoteVerifier.</p>
+  <button id="btnFreeze">Freeze on Chain B</button>
+</div>
+
 </body>
 </html>

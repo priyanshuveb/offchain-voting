@@ -40,11 +40,11 @@ const votes = batch.map(v => ({
   voter:      v.voter,
   power:      BigInt(v.power),
   nonce:      BigInt(v.nonce),
-  deadline:   BigInt(v.deadline),   // you should have stored this when the vote was posted
+  deadline:   BigInt(v.deadline),
   abstain:    v.support === "abstain",
   signature:  v.signature
 }));
-// map objects -> arrays in tuple order
+
 const votesCalldata = votes.map(v => ([
   v.proposalId,  // uint256
   v.support,     // bool
@@ -71,8 +71,3 @@ const tx = await verifier.batchVerifyAndTally(votesCalldata, mp.leaves, mp.proof
 console.log("tx hash:", tx.hash);
 await tx.wait();
 console.log("tx mined");
-
-// const signer = new ethers.Wallet(); // wallet on Chain B
-// const verifier = new ethers.Contract(VOTE_VERIFIER, abi, signer);
-// const tx = await verifier.batchVerifyAndTally(votes, mp.leaves, mp.proof, mp.proofFlags);
-// await tx.wait();

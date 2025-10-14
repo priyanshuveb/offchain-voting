@@ -11,9 +11,10 @@ import {
   keccak256,
   AbiCoder,
   getAddress,
+  isAddress,
+  verifyTypedData
 } from 'ethers'
 import { MerkleTree } from 'merkletreejs'
-import { log } from 'console'
 
 dotenv.config()
 const __filename = fileURLToPath(import.meta.url)
@@ -41,11 +42,14 @@ const LST = process.env.LST // LST (shares) on Chain A
 
 const provider = new JsonRpcProvider(RPC_URL)
 
-// ---- ABIs (fragments) ----
+// ---- ABIs----
 const ERC20_ABI = ['function balanceOf(address) view returns (uint256)']
 const PUBLISHER_ABI = [
   'function getSnapshot(uint256) view returns (uint64 snapshotBlock, uint256 snapshotER)',
   'function getWindow(uint256) view returns (uint64 votingStart, uint64 votingEnd)',
+]
+const VERIFIER_ABI = [
+  "function getNextNonce(uint256,address) view returns (uint256)"
 ]
 
 // ---- Helpers ----
@@ -71,7 +75,7 @@ function eip712Domain() {
 const EIP712_TYPES = {
   Vote: [
     { name: 'proposalId', type: 'uint256' },
-    { name: 'support', type: 'bool' }, // true/false; "abstain" we’ll encode as false + separate flag if needed
+    { name: 'support', type: 'bool' }, // true/false; "abstain" we’ll encode as false + separate flag
     { name: 'voter', type: 'address' },
     { name: 'power', type: 'uint256' },
     { name: 'nonce', type: 'uint256' },
@@ -94,8 +98,11 @@ function keccakBuf(data) {
 
 // ---- Lazy power computation (at vote time) ----
 async function computePowerAt(proposalId, voter) {
+  
   const publisher = new Contract(PUBLISHER, PUBLISHER_ABI, provider)
   const [snapshotBlock, snapshotER] = await publisher.getSnapshot(proposalId)
+  console.log({snapshotBlock}, {snapshotER});
+  
   const asset = new Contract(ASSET, ERC20_ABI, provider)
   const lst = new Contract(LST, ERC20_ABI, provider)
 
@@ -103,11 +110,42 @@ async function computePowerAt(proposalId, voter) {
   const l = await lst.balanceOf(voter, { blockTag: Number(snapshotBlock) })
 
   const ER_SCALAR = 10n ** 18n
-  const power = a + (l * snapshotER) / ER_SCALAR // floor via integer division
-  return { power, snapshotBlock: Number(snapshotBlock), snapshotER }
+
+  const power = a + (l * snapshotER) / ER_SCALAR // floor division
+  console.log({power});
+  
+  console.log("The power is:", power);
+    
+  return {power}
 }
 
 // ---- Routes ----
+
+app.get("/api/nextNonce/:id/:voter", async (req, res) => {
+const verifier = new Contract(VERIFIER_ABI, abi, provider);
+const nonce = await verifier.getNextNonce(req.params.id, getAddress(req.params.voter));
+res.json({nonce: nonce.toString()})
+});
+
+app.post('/api/compute-power', async (req, res) => {  
+  try {
+    const { proposalId, voter } = req.body;
+    if (!proposalId || !voter) {
+      return res.status(400).json({ error: 'Missing "proposalId" and "voter".' });
+    }
+    if (!isAddress(voter)) {
+        return res.status(400).json({ error: 'Invalid voter address provided.' });
+    }
+    
+    const result = await computePowerAt(proposalId, voter);
+    res.json({
+      power: result.power.toString(),
+    });
+  } catch (error) {
+    console.error('API Error:', error);
+    res.status(500).json({ error: 'An error occurred while computing power.', details: error.message });
+  }
+});
 
 // Proposal details for the UI
 app.get('/api/proposal/:id', async (req, res) => {
@@ -116,12 +154,15 @@ app.get('/api/proposal/:id', async (req, res) => {
     const publisher = new Contract(PUBLISHER, PUBLISHER_ABI, provider)
     const [snapshotBlock, snapshotER] = await publisher.getSnapshot(id)
     const [votingStart, votingEnd] = await publisher.getWindow(id)
+    const deadline = await publisher.getDeadline(id);
+    // const deadline = 18667236009
     res.json({
       proposalId: String(id),
       snapshotBlock: Number(snapshotBlock),
       snapshotER: snapshotER.toString(),
       votingStart: Number(votingStart),
       votingEnd: Number(votingEnd),
+      deadline: Number(deadline),
       chainB: { chainId: CHAIN_B_ID, verifier: VOTE_VERIFIER },
     })
   } catch (e) {
@@ -136,36 +177,25 @@ app.post('/api/vote', async (req, res) => {
     const { proposalId, support, voter, nonce, deadline, signature, abstain } =
       req.body
 
-    // Basic input checks
     if (!proposalId || !voter || !signature) {
       return res.status(400).json({ error: 'missing fields' })
     }
 
-    // recompute power lazily (and check window)
     const publisher = new Contract(PUBLISHER, PUBLISHER_ABI, provider)
     const [votingStart, votingEnd] = await publisher.getWindow(proposalId)
     const now = Math.floor(Date.now() / 1000)
-    // if (now < Number(votingStart) || now > Number(votingEnd)) {
-    //   return res.status(400).json({ error: "outside voting window" });
-    // }
+    if (now < Number(votingStart) || now > Number(votingEnd)) {
+      return res.status(400).json({ error: "outside voting window" });
+    }
 
-    console.log('I am here 1')
-
-    console.log('Computing power for', voter, 'at proposal', proposalId)
 
     const { power } = await computePowerAt(BigInt(proposalId), voter)
-    console.log('Computed power:', power.toString())
 
-    // if (userPower !== undefined && BigInt(userPower) !== power) {
-    //   return res.status(400).json({ error: "client power mismatch" });
-    // }
-    console.log('I am here 2')
+    if (userPower !== undefined && BigInt(userPower) !== power) {
+      return res.status(400).json({ error: "client power mismatch" });
+    }
 
     // Verify the EIP-712 signature server-side
-    // NOTE: with ethers v6, verifyTypedData is under Wallet, but for a pure recover use library below:
-    const { verifyTypedData } = await import('ethers')
-    console.log('I am here 3')
-
     console.log(
       BigInt(proposalId),
       !!support,
@@ -190,8 +220,6 @@ app.post('/api/vote', async (req, res) => {
       signature
     )
 
-    console.log('Recovered wallet:', wallet)
-
     const valid =
       verifyTypedData(
         eip712Domain(),
@@ -206,13 +234,12 @@ app.post('/api/vote', async (req, res) => {
         },
         signature
       ) === getAddress(voter)
-    console.log('I am here 4')
-    if (!valid) return res.status(400).json({ error: 'bad signature' })
-    if (now > Number(deadline))
-      return res.status(400).json({ error: 'expired signature' })
-    console.log('I am here 5')
 
-    // Store vote (dedup by higher nonce)
+    if (!valid) return res.status(400).json({ error: 'Bad signature' })
+    if (now > Number(deadline))
+      return res.status(400).json({ error: 'Expired signature' })
+
+    // Store vote (by higher nonce)
     const db = readVotes()
     const key = String(proposalId)
     if (!db[key]) db[key] = []
@@ -243,62 +270,6 @@ app.post('/api/vote', async (req, res) => {
   }
 })
 
-// Build Merkle root (only after votingEnd)
-// app.post("/api/merkle/:id", async (req, res) => {
-//   try {
-//     const id = String(req.params.id);
-//     const publisher = new Contract(PUBLISHER, PUBLISHER_ABI, provider);
-//     const [ , votingEnd] = await publisher.getWindow(id);
-//     const now = Math.floor(Date.now() / 1000);
-//     if (now <= Number(votingEnd)) {
-//       return res.status(400).json({ error: "Voting period not ended yet." });
-//     }
-
-//     const db = readVotes();
-//     const list = (db[id] || []);
-//     if (list.length === 0) {
-//       return res.status(400).json({ error: "No votes recorded." });
-//     }
-
-//     // Dedup by highest nonce per voter
-//     const map = new Map();
-//     for (const v of list) {
-//       const k = getAddress(v.voter);
-//       if (!map.has(k) || BigInt(map.get(k).nonce) < BigInt(v.nonce)) map.set(k, v);
-//     }
-//     const unique = [...map.values()];
-
-//     const leaves = unique.map(v => leafBuf(v.voter, v.power));
-//     const tree = new MerkleTree(leaves, pairHash, { sort: false });
-//     const root = "0x" + tree.getRoot().toString("hex");
-
-//     const tallies = unique.reduce((acc, v) => {
-//       const p = BigInt(v.power);
-//       if (v.support === "yes") acc.for += p;
-//       else if (v.support === "no") acc.against += p;
-//       else acc.abstain += p;
-//       return acc;
-//     }, { for: 0n, against: 0n, abstain: 0n });
-
-//     const out = {
-//       proposalId: id,
-//       root,
-//       counts: {
-//         for: tallies.for.toString(),
-//         against: tallies.against.toString(),
-//         abstain: tallies.abstain.toString(),
-//         totalCounted: (tallies.for + tallies.against + tallies.abstain).toString()
-//       },
-//       voters: unique.map(v => ({ voter: v.voter, power: v.power, support: v.support, nonce: v.nonce })),
-//     };
-
-//     writeMerkle(out);
-//     res.json(out);
-//   } catch (e) {
-//     res.status(500).json({ error: e.message });
-//   }
-// });
-
 app.post('/api/merkle/:id', async (req, res) => {
   try {
     const id = String(req.params.id)
@@ -317,7 +288,6 @@ app.post('/api/merkle/:id', async (req, res) => {
     const list = db[id] || []
     if (list.length === 0)
       return res.status(400).json({ error: 'No votes recorded.' })
-    console.log(' Guava 2')
 
     const byVoter = new Map()
     for (const v of list) {
@@ -325,32 +295,24 @@ app.post('/api/merkle/:id', async (req, res) => {
       if (!byVoter.has(k) || BigInt(byVoter.get(k).nonce) < BigInt(v.nonce))
         byVoter.set(k, v)
     }
-    console.log(' Guava 3')
 
     const unique = [...byVoter.values()]
-    console.log(' Guava 4')
 
     // STABLE ORDER: sort by checksum address
     unique.sort((a, b) =>
       getAddress(a.voter).localeCompare(getAddress(b.voter))
     )
-    console.log(' Guava 5')
 
     // build leaves in that order
     const leavesBuf = unique.map((v) => leafBuf(v.voter, v.power))
-
-    console.log(' Guava 6')
 
     const tree = new MerkleTree(leavesBuf, keccakBuf, {
       hashLeaves: false,
       sort: false,
     })
-    console.log(' Guava 7')
 
     const root = '0x' + tree.getRoot().toString('hex')
-    console.log(' Guava 8')
 
-    // tallies (optional)
     const tallies = unique.reduce(
       (acc, v) => {
         const p = BigInt(v.power)
