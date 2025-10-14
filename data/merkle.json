@@ -12,19 +12,19 @@
       "voter": "0x90416E8285169F15346FcF9E336B6E1443b8c30A",
       "power": "0",
       "support": "yes",
-      "nonce": "1760209522875"
+      "nonce": "1760381346262"
     },
     {
       "voter": "0xb62803C3f1c7112CAd3F35a503504C3B0920eDBF",
       "power": "89220000000000000004",
       "support": "yes",
-      "nonce": "1760208477875"
+      "nonce": "1760381334230"
     },
     {
       "voter": "0xC6ad6C00877a05a0ac1BBD456e31792c6b561F8D",
       "power": "0",
-      "support": "abstain",
-      "nonce": "1760291812769"
+      "support": "yes",
+      "nonce": "1760381359064"
     }
   ],
   "leavesHexOrdered": [

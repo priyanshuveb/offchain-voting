@@ -74,14 +74,15 @@
       const support = supportSel.value === "yes" ? true : false; // note: "abstain" maps to false here, we pass flag
 
       const nonce = BigInt(Date.now()); // demo nonce (monotonic per voter is better on backend)
-      const deadline = BigInt(Math.floor(Date.now()/1000) + 3600); // 1 hour
-
+      // const deadline = BigInt(Math.floor(Date.now()/1000) + 3600); // 1 hour
+      const deadline = 1780375555 // must be before voting end
+      const myPower = account == 0xb62803C3f1c7112CAd3F35a503504C3B0920eDBF? 89220000000000000004n : 0n; // demo power (backend recomputes at snapshot)
       // We don't know power client-side (backend recomputes). Set 0; server will recompute & ignore this.
       const value = {
         proposalId: BigInt(proposal.proposalId),
         support,
         voter: account,
-        power: 0n,
+        power: myPower,
         nonce,
         deadline,
       };
@@ -93,7 +94,9 @@
       const signer = await provider.getSigner();
 
       const signature = await signer.signTypedData(
-        eip712Domain(proposal.chainB.chainId, proposal.chainB.verifier),
+        //@update: Right now using fixed verifier from loaded proposal
+        // eip712Domain(proposal.chainB.chainId, proposal.chainB.verifier),
+        eip712Domain(proposal.chainB.chainId, "0x05342e07326A0CcE11e4C1873Da8faFCae6dCBE0"),
         eip712Types(),
         value
       );
