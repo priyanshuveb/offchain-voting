@@ -10,8 +10,15 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const DATA_DIR = path.join(__dirname, 'data')
 const VOTES_PATH = path.join(DATA_DIR, 'votes.json')
+const MERKLE_PATH = path.join(__dirname, 'data', 'merkle.json');
+if (!fs.existsSync(MERKLE_PATH)) {
+  throw new Error(`Missing ${MERKLE_PATH}. Run your /api/merkle/:id freeze first.`);
+}
+const merkle = JSON.parse(fs.readFileSync(MERKLE_PATH, 'utf8'));
 
-let proposalId = 2; //
+const proposalId = merkle.proposalId;
+if (proposalId == null) throw new Error("proposalId missing in merkle.json");
+
 // 1) fetch multiproof for ALL voters (or pass a subset in body)
 const mp = await fetch(`http://localhost:3000/api/multiproof/${proposalId}`, {
   method: "POST",
@@ -40,11 +47,11 @@ const votes = batch.map(v => ({
   voter:      v.voter,
   power:      BigInt(v.power),
   nonce:      BigInt(v.nonce),
-  deadline:   BigInt(v.deadline),   // you should have stored this when the vote was posted
+  deadline:   BigInt(v.deadline),
   abstain:    v.support === "abstain",
   signature:  v.signature
 }));
-// map objects -> arrays in tuple order
+
 const votesCalldata = votes.map(v => ([
   v.proposalId,  // uint256
   v.support,     // bool
@@ -64,15 +71,9 @@ const privateKey = process.env.PRIVATE_KEY; // wallet on Chain B
 if (!privateKey) throw new Error("PRIVATE_KEY not set in .env");
 const signer = new ethers.Wallet(privateKey, provider); // wallet on Chain B
 const verifier = new ethers.Contract(process.env.VOTE_VERIFIER, abi, signer);
-console.log("Votes", votes);
 
 
 const tx = await verifier.batchVerifyAndTally(votesCalldata, mp.leaves, mp.proof, mp.proofFlags);
 console.log("tx hash:", tx.hash);
 await tx.wait();
 console.log("tx mined");
-
-// const signer = new ethers.Wallet(); // wallet on Chain B
-// const verifier = new ethers.Contract(VOTE_VERIFIER, abi, signer);
-// const tx = await verifier.batchVerifyAndTally(votes, mp.leaves, mp.proof, mp.proofFlags);
-// await tx.wait();
