@@ -1,35 +1,21 @@
 {
-  "proposalId": "2",
-  "root": "0x96066cd21db9d2fb34b105ae0c8f691a45605438d91601c9c5e7997d0d7af6bd",
+  "proposalId": "14",
+  "root": "0x59654de74dcf146d924006f655be389608288ff71398afdb3605ab50fdd6ef69",
   "counts": {
-    "for": "89220000000000000004",
+    "for": "190000000000000000000",
     "against": "0",
     "abstain": "0",
-    "totalCounted": "89220000000000000004"
+    "totalCounted": "190000000000000000000"
   },
   "voters": [
     {
       "voter": "0x90416E8285169F15346FcF9E336B6E1443b8c30A",
-      "power": "0",
+      "power": "190000000000000000000",
       "support": "yes",
-      "nonce": "1760381346262"
-    },
-    {
-      "voter": "0xb62803C3f1c7112CAd3F35a503504C3B0920eDBF",
-      "power": "89220000000000000004",
-      "support": "yes",
-      "nonce": "1760381334230"
-    },
-    {
-      "voter": "0xC6ad6C00877a05a0ac1BBD456e31792c6b561F8D",
-      "power": "0",
-      "support": "yes",
-      "nonce": "1760381359064"
+      "nonce": "1"
     }
   ],
   "leavesHexOrdered": [
-    "0x1d46355c140c69b1bcf9ef356629fa395793c8ab38a3612e858cdb923ae38a59",
-    "0xe82831dbd641ad81d84500b47e110548b9e20a0074badf904a693f33bee5e478",
-    "0xdaaffb3834606d5f8e9027ea9b848e550a7ceeda17943ffe418ff2b57d66eb42"
+    "0x59654de74dcf146d924006f655be389608288ff71398afdb3605ab50fdd6ef69"
   ]
 }

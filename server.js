@@ -47,6 +47,7 @@ const ERC20_ABI = ['function balanceOf(address) view returns (uint256)']
 const PUBLISHER_ABI = [
   'function getSnapshot(uint256) view returns (uint64 snapshotBlock, uint256 snapshotER)',
   'function getWindow(uint256) view returns (uint64 votingStart, uint64 votingEnd)',
+  'function getDeadline(uint256) view returns (uint256)'
 ]
 const VERIFIER_ABI = [
   "function getNextNonce(uint256,address) view returns (uint256)"
@@ -110,6 +111,7 @@ async function computePowerAt(proposalId, voter) {
   const l = await lst.balanceOf(voter, { blockTag: Number(snapshotBlock) })
 
   const ER_SCALAR = 10n ** 18n
+console.log({a}, {l}, {ER_SCALAR}, {snapshotER});
 
   const power = a + (l * snapshotER) / ER_SCALAR // floor division
   console.log({power});
@@ -118,13 +120,16 @@ async function computePowerAt(proposalId, voter) {
     
   return {power}
 }
-
+190000000000000000000
 // ---- Routes ----
 
 app.get("/api/nextNonce/:id/:voter", async (req, res) => {
-const verifier = new Contract(VERIFIER_ABI, abi, provider);
+const verifier = new Contract(VOTE_VERIFIER, VERIFIER_ABI, provider);
+console.log(req.params.id, req.params.voter);
+console.log(VOTE_VERIFIER);
+
 const nonce = await verifier.getNextNonce(req.params.id, getAddress(req.params.voter));
-res.json({nonce: nonce.toString()})
+res.json({nextNonce: nonce.toString()})
 });
 
 app.post('/api/compute-power', async (req, res) => {  
@@ -174,7 +179,7 @@ app.get('/api/proposal/:id', async (req, res) => {
 app.post('/api/vote', async (req, res) => {
   try {
     console.log('Received vote:', req.body)
-    const { proposalId, support, voter, nonce, deadline, signature, abstain } =
+    const { proposalId, support, voter, userPower, nonce, deadline, signature, abstain } =
       req.body
 
     if (!proposalId || !voter || !signature) {
@@ -206,19 +211,19 @@ app.post('/api/vote', async (req, res) => {
       signature
     )
 
-    const wallet = verifyTypedData(
-      eip712Domain(),
-      EIP712_TYPES,
-      {
-        proposalId: BigInt(proposalId),
-        support: !!support,
-        voter: getAddress(voter),
-        power,
-        nonce: BigInt(nonce),
-        deadline: BigInt(deadline),
-      },
-      signature
-    )
+    // const wallet = verifyTypedData(
+    //   eip712Domain(),
+    //   EIP712_TYPES,
+    //   {
+    //     proposalId: BigInt(proposalId),
+    //     support: !!support,
+    //     voter: getAddress(voter),
+    //     power,
+    //     nonce: BigInt(nonce),
+    //     deadline: BigInt(deadline),
+    //   },
+    //   signature
+    // )
 
     const valid =
       verifyTypedData(

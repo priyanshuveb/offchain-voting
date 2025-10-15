@@ -18,7 +18,7 @@
 
     let account, chainId, verifier;
     let proposal;
-    const VOTE_VERIFIER = "0x05342e07326A0CcE11e4C1873Da8faFCae6dCBE0"
+    const VOTE_VERIFIER = "0xB8A99CdD8269648939e0e0512b2f30961673D9BA"
     let deadline;
     async function loadProposal() {
       const id = document.getElementById("proposalId").value || "1";
@@ -93,8 +93,7 @@
       }),
       })
       const power_data = await power_resp.json()
-      console.log("P O W E R", power_data);
-      
+      // console.log("P O W E R", power_data);      
       const value = {
         proposalId: BigInt(proposal.proposalId),
         support,
@@ -123,6 +122,7 @@
           support,
           abstain,
           voter: account,
+          userPower: power_data.power,
           nonce: nonce.toString(),
           deadline: deadline.toString(),
           signature
