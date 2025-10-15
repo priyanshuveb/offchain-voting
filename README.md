@@ -91,7 +91,7 @@ THRESHOLD=1000000000000000000
 
 ```bash
 npm install
-node server.js
+npm start
 ```
 
 - App: http://localhost:3000/  
