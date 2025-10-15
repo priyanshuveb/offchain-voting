@@ -1,21 +1,21 @@
 {
-  "proposalId": "14",
-  "root": "0x59654de74dcf146d924006f655be389608288ff71398afdb3605ab50fdd6ef69",
+  "proposalId": "16",
+  "root": "0xfb938a109a84dc01c0eb1916e9e4306748f9dade4d9dc4e78f565362d272cb94",
   "counts": {
-    "for": "190000000000000000000",
+    "for": "290000000000000000000",
     "against": "0",
     "abstain": "0",
-    "totalCounted": "190000000000000000000"
+    "totalCounted": "290000000000000000000"
   },
   "voters": [
     {
       "voter": "0x90416E8285169F15346FcF9E336B6E1443b8c30A",
-      "power": "190000000000000000000",
+      "power": "290000000000000000000",
       "support": "yes",
       "nonce": "1"
     }
   ],
   "leavesHexOrdered": [
-    "0x59654de74dcf146d924006f655be389608288ff71398afdb3605ab50fdd6ef69"
+    "0xfb938a109a84dc01c0eb1916e9e4306748f9dade4d9dc4e78f565362d272cb94"
   ]
 }

@@ -130,5 +130,16 @@
       "deadline": "1760756403",
       "signature": "0x1ccabc2c5685365d231072ceabe1399d1a62a95ff11fb97ca0b951feab39bca86622919b28b98ef24f14fe4135b2d35771ebb15bdfdba9544ef74234fe22acc91c"
     }
+  ],
+  "16": [
+    {
+      "proposalId": "16",
+      "voter": "0x90416E8285169F15346FcF9E336B6E1443b8c30A",
+      "power": "290000000000000000000",
+      "support": "yes",
+      "nonce": "1",
+      "deadline": "1760792224",
+      "signature": "0xbf8868f7fca917e93adbc186bcb0340d57c2aa91a93b6a06c86c6732a2fe866151630f440b55f41143c13914c37dc03d49b5bd8733b2c63804ec378306e7055e1c"
+    }
   ]
 }
